@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  trino:
+    image: trinodb/trino:latest
+    ports:
+      - "8080:8080" 
+    volumes:
+      - ./catalog:/etc/trino/catalog 
+    depends_on:
+      - postgres
+
+
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: exampledb
+      POSTGRES_USER: exampleuser
+      POSTGRES_PASSWORD: examplepass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

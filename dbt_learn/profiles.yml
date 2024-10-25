@@ -1,0 +1,12 @@
+dbt_learn:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      method: none  # Adjust this based on your authentication needs
+      host: localhost
+      port: 8080
+      user: exampleuser  # User for connecting to Trino
+      catalog: postgresql  # Trino catalog for PostgreSQL; adjust if different
+      schema: public     # Schema within the PostgreSQL database
+      threads: 4
