@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: raw
+    database: postgresql
+    schema: public
+    tables:
+      - name: accounts
+        description: "Table containing accounts information"
+        columns:
+          - name: account_id
+            description: "Unique identifier for the account"
+          - name: first_name
+            description: "First name of the account holder"
+          - name: last_name
+            description: "Last name of the account holder"
+          - name: address
+            description: "Address of the account holder"
+          - name: email
+            description: "Email address of the account holder"
+          - name: mobile
+            description: "Mobile number of the account holder"
+          - name: start_time
+            description: "Timestamp when the account became active"
+          - name: end_time
+            description: "Timestamp when the account became inactive"
+          - name: delete_flag
+            description: "Flag indicating if the account is marked for deletion"
+          - name: load_timestamp
+            description: "Timestamp when the record was loaded"

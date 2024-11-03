@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: raw
+    database: postgresql
+    schema: public
+    tables:
+      - name: transactions
+        description: "Table containing transaction records for accounts."
+        columns:
+          - name: transaction_id
+            description: "Unique identifier for each transaction."
+          - name: account_id
+            description: "Identifier of the account associated with the transaction."
+          - name: transaction_date
+            description: "Date and time when the transaction occurred."
+          - name: amount
+            description: "The amount of money involved in the transaction."
+          - name: transaction_type
+            description: "Type of transaction, either 'credit' or 'debit'."
+          - name: description
+            description: "Brief description of the transaction."
+          - name: start_time
+            description: "The date and time when the transaction record became active."
+          - name: end_time
+            description: "The date and time when the transaction record was closed, if applicable."
+          - name: delete_flag
+            description: "Indicates if the transaction record is deleted (TRUE) or active (FALSE)."
+          - name: load_timestamp
+            description: "Timestamp when the data was loaded into the table."

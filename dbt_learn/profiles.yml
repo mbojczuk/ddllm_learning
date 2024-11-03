@@ -1,12 +1,23 @@
 dbt_learn:
-  target: dev
   outputs:
-    dev:
+    trino:
       type: trino
       method: none  # Adjust this based on your authentication needs
       host: localhost
-      port: 8080
-      user: exampleuser  # User for connecting to Trino
+      port: 8080     # Trino's default port
+      user: dbt-trino  # User for connecting to Trino
+      password: dbt-trino
       catalog: postgresql  # Trino catalog for PostgreSQL; adjust if different
       schema: public     # Schema within the PostgreSQL database
       threads: 4
+    delta:
+      type: trino
+      method: none  # Adjust this based on your authentication needs
+      host: localhost
+      port: 8080     # Trino's default port
+      user: dbt-trino  # User for connecting to Trino
+      password: dbt-trino
+      catalog: delta  # Trino catalog for PostgreSQL; adjust if different
+      schema: default     # Schema within the PostgreSQL database
+      threads: 4
+  target: delta
