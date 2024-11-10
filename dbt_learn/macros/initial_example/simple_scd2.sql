@@ -7,6 +7,8 @@
     or the name of the model, this determines the final name
     of the table in the database #}
     {%- set target_table = model.get('alias', model.get('name')) -%}
+    {%- set unique_key = config.get('unique_key') %}
+    {%- set strategy_name = config.get('strategy') -%}
 
     {# The code attempts to retrieve the target table where the snapshot data will be stored #}
     {% set target_relation_exists, target_relation = get_or_create_relation(
@@ -16,6 +18,20 @@
             type='table') -%}
 
     {% set temp_relation = make_temp_relation(target_relation) %}
+
+    {# Drop the temp table if it exists - pre-hook incase it is randomly lingering from before #}
+    {% set temp_relation_exists = adapter.get_relation(
+        database=temp_relation.database,
+        schema=temp_relation.schema,
+        identifier=temp_relation.identifier
+    ) is not none %}
+
+    {% if temp_relation_exists %}
+        {{ adapter.drop_relation(temp_relation) }}
+    {% endif %}
+
+    {# get all column names from this relation #}
+    {% set column_list = adapter.get_columns_in_relation(this) %}
 
     {%- if not target_relation.is_table -%}
         {% do exceptions.relation_wrong_type(target_relation, 'table') %}
@@ -37,6 +53,11 @@
       {{ build_sql }}
     {% endcall %}
 
+    {# Run post-hooks and ensure temp table cleanup #}
+    {{ run_hooks(post_hooks, inside_transaction=True) }}
+    {{ run_hooks(post_hooks, inside_transaction=False) }}
+    {{ adapter.drop_relation(temp_relation) }}
+
     {{- return({'relations':[target_relation]}) -}}
 
 {% endmaterialization %}
@@ -45,7 +66,9 @@
     {{- get_create_table_as_sql(True, temp_relation, sql) -}}
     {% set create_table %}
         select
-            *,
+            {%- for column in columns -%}
+                {{ column.name }}{% if not loop.last %}, {% endif %}
+            {%- endfor -%},
             date'9999-12-31' as end_date
         from {{ temp_relation }}
     {% endset %}

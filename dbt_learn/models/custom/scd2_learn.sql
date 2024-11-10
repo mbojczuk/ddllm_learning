@@ -1,6 +1,8 @@
 {{
   config(
-    materialized = 'simple_scd2'
+    materialized = 'simple_scd2',
+    unique_key = 'account_id',
+    strategy = 'merge'
     )
 }}
 
@@ -13,3 +15,4 @@ select
     mobile,
     start_date
 from {{ source('raw', 'accounts') }}
+where start_date = date('{{ var('business_date') }}')
