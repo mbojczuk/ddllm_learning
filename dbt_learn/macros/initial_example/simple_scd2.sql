@@ -8,7 +8,14 @@
     of the table in the database #}
     {%- set target_table = model.get('alias', model.get('name')) -%}
     {%- set unique_key = config.get('unique_key') %}
-    {%- set strategy_name = config.get('strategy') -%}
+    {%- set updated_at = config.get('updated_at') -%}
+
+    {{ log(unique_key, info=True) }}
+    {{ log(updated_at, info=True) }}
+    {{ log(target_table, info=True) }}
+    {{ log(config, info=True) }}
+    {{ log(model, info=True) }}
+    {{ log(this, info=True) }}
 
     {# The code attempts to retrieve the target table where the snapshot data will be stored #}
     {% set target_relation_exists, target_relation = get_or_create_relation(
@@ -28,10 +35,13 @@
 
     {% if temp_relation_exists %}
         {{ adapter.drop_relation(temp_relation) }}
-    {% endif %}
+    {% endif %} 
+
+    {# logging compiled code #}
+    {{ log(model['compiled_code'], info=True)  }}
 
     {# get all column names from this relation #}
-    {% set column_list = adapter.get_columns_in_relation(this) %}
+    {%- set columns = adapter.get_columns_in_relation(this) -%}
 
     {%- if not target_relation.is_table -%}
         {% do exceptions.relation_wrong_type(target_relation, 'table') %}
@@ -42,11 +52,13 @@
     {# inside_transaction=True: Runs hooks inside the transaction, ensuring that any pre-setup actions are rolled back if the snapshot fails. #}
     {{ run_hooks(pre_hooks, inside_transaction=True) }}
 
+    {{ log(temp_relation, info=True) }}
+
     {# If the table does not yet exist #}
     {% if not target_relation_exists %}
-        {%- set build_sql = create_trino_table(temp_relation, target_relation, sql) -%}
+        {%- set build_sql = create_trino_table(target_relation, model['compiled_code'], updated_at, unique_key) -%}
     {% else %}
-        {%- set build_sql = scd2_merge(temp_relation, target_relation, sql) -%}
+        {%- set build_sql = scd2_merge(temp_relation, target_relation, model['compiled_code']) -%}
     {% endif %}
 
     {% call statement('main') %}
@@ -62,16 +74,23 @@
 
 {% endmaterialization %}
 
-{% macro create_trino_table(temp_relation, target_relation, sql) %}
-    {{- get_create_table_as_sql(True, temp_relation, sql) -}}
+{% macro create_trino_table(target_relation, sql, updated_at, unique_key) %}
     {% set create_table %}
-        select
-            {%- for column in columns -%}
-                {{ column.name }}{% if not loop.last %}, {% endif %}
-            {%- endfor -%},
-            date'9999-12-31' as end_date
-        from {{ temp_relation }}
+        SELECT
+            *,
+            {{ updated_at }} as dbt_valid_from,
+            date '9999-12-31' as dbt_valid_to,
+            to_hex(md5(cast(cast({{ unique_key }} as varchar) as varbinary))) as dbt_scd_id,
+            0 as dbt_dlet_flag
+        FROM (
+            {{ sql }}
+        ) sbq
     {% endset %}
+
+    {{ get_create_table_as_sql(False, target_relation, create_table) }}
+{% endmacro %}
+
+
 
     {{- get_create_table_as_sql(False, target_relation , create_table) -}}
 {% endmacro %}
@@ -83,31 +102,22 @@
     {# Step 2: Define the MERGE statement to update existing records or insert new ones #}
     MERGE INTO {{ target_relation }} AS target
     USING (
-        SELECT 
-            source.account_id,
-            date_add('day', -1, source.start_date) AS new_end_date,
-            source.first_name, 
-            source.last_name, 
-            source.address, 
-            source.email, 
-            source.mobile, 
-            source.start_date
+        SELECT source.*
         FROM {{ temp_relation }} AS source
         JOIN {{ target_relation }} AS target
-            ON source.account_id = target.account_id
-            AND target.end_date = date'9999-12-31'
-            AND source.start_date > target.start_date
+            ON source.dbt_scd_id = target.dbt_scd_id
+            AND target.dbt_valid_to = date'9999-12-31'
+            AND source.dbt_valid_from > target.dbt_valid_from
     ) AS updates
-    ON target.account_id = updates.account_id
-        AND target.end_date = date'9999-12-31'
+    ON target.dbt_scd_id = updates.dbt_scd_id
+        AND target.dbt_valid_to = date'9999-12-31'
     WHEN MATCHED THEN
-        UPDATE SET end_date = updates.new_end_date;
+        UPDATE SET dbt_valid_to = date_add('day', -1, updates.{{ updated_at }});
 
     INSERT INTO {{ target_relation }}
     (
 	select 
-		{{ temp_relation }}.*,
-		date('9999-12-31') as end_date
+		{{ temp_relation }}.*
 	from {{ temp_relation }}
     );
 {% endmacro %}
