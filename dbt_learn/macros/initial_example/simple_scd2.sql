@@ -40,9 +40,6 @@
     {# logging compiled code #}
     {{ log(model['compiled_code'], info=True)  }}
 
-    {# get all column names from this relation #}
-    {%- set columns = adapter.get_columns_in_relation(this) -%}
-
     {%- if not target_relation.is_table -%}
         {% do exceptions.relation_wrong_type(target_relation, 'table') %}
     {%- endif -%}
@@ -58,9 +55,10 @@
     {% if not target_relation_exists %}
         {%- set build_sql = create_trino_table(target_relation, model['compiled_code'], updated_at, unique_key) -%}
     {% else %}
-        {%- set build_sql = scd2_merge(temp_relation, target_relation, model['compiled_code']) -%}
+        {%- set build_sql = scd2_merge(temp_relation, target_relation, model['compiled_code'], updated_at, unique_key) -%}
     {% endif %}
 
+    {# literally a main function call once we set what to do when the variable is called was called #}
     {% call statement('main') %}
       {{ build_sql }}
     {% endcall %}
@@ -87,23 +85,30 @@
         ) sbq
     {% endset %}
 
+    {# once you set the sql this function will run table creation #}
     {{ get_create_table_as_sql(False, target_relation, create_table) }}
 {% endmacro %}
 
 
-
-    {{- get_create_table_as_sql(False, target_relation , create_table) -}}
-{% endmacro %}
-
-{% macro scd2_merge(temp_relation, target_relation, sql) %}
-    {# Step 1: Create the temp table with initial data #}
+{% macro scd2_merge(temp_relation, target_relation, sql, updated_at, unique_key) %}
+    {# Step 1: Create the temp table with initial data, temp relation is the ___dbt_temp suffixed table #}
     {{ get_create_table_as_sql(True, temp_relation, sql) }}
 
     {# Step 2: Define the MERGE statement to update existing records or insert new ones #}
     MERGE INTO {{ target_relation }} AS target
     USING (
-        SELECT source.*
-        FROM {{ temp_relation }} AS source
+        WITH cte as (
+            SELECT 
+                *,
+                {{ updated_at }} as dbt_valid_from,
+                date '9999-12-31' as dbt_valid_to,
+                to_hex(md5(cast(cast({{ unique_key }} as varchar) as varbinary))) as dbt_scd_id,
+                0 as dbt_dlet_flag
+            FROM {{ temp_relation }}
+        )
+        SELECT 
+            source.*
+        FROM cte AS source
         JOIN {{ target_relation }} AS target
             ON source.dbt_scd_id = target.dbt_scd_id
             AND target.dbt_valid_to = date'9999-12-31'
@@ -115,9 +120,5 @@
         UPDATE SET dbt_valid_to = date_add('day', -1, updates.{{ updated_at }});
 
     INSERT INTO {{ target_relation }}
-    (
-	select 
-		{{ temp_relation }}.*
-	from {{ temp_relation }}
-    );
+    SELECT * FROM cte;
 {% endmacro %}
